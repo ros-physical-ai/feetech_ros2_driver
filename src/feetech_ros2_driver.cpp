@@ -310,6 +310,20 @@ CallbackReturn FeetechHardwareInterface::on_activate(const rclcpp_lifecycle::Sta
   read(rclcpp::Time{}, rclcpp::Duration::from_seconds(0));
   // Set the initial command to current joint positions
   hw_positions_ = state_hw_positions_;
+
+  // Written before torque enables, or the servo chases its stale pre-deactivation goal first.
+  write(rclcpp::Time{}, rclcpp::Duration::from_seconds(0));
+  // Re-enable torque for command interfaces.
+  for (size_t i = 0; i < info_.joints.size(); ++i) {
+    if (info_.joints[i].command_interfaces.empty()) {
+      continue;
+    }
+    if (const auto result = communication_protocol_->set_torque(joint_ids_[i], true); !result) {
+      spdlog::error("FeetechHardwareInterface::enable_torque_for_command_joints_ -> {}", result.error());
+      return CallbackReturn::ERROR;
+    }
+  }
+
   return CallbackReturn::SUCCESS;
 }
 
