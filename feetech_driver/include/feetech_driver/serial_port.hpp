@@ -66,7 +66,9 @@ class SerialPort {
  private:
   [[nodiscard]] Result check_port() const noexcept;
   std::string dev_;
-  std::chrono::milliseconds timeout_ = std::chrono::milliseconds(5);
+  // Must exceed the servo's EEPROM commit time: a write that changes an EEPROM
+  // value is answered only after the commit, measured at up to ~41 ms (STS3215).
+  std::chrono::milliseconds timeout_ = std::chrono::milliseconds(60);
   LibSerial::SerialPort port_;
 };
 }  // namespace feetech_driver

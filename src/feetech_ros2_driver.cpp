@@ -151,7 +151,10 @@ CallbackReturn FeetechHardwareInterface::configure_joints_(const JointIdConfigMa
         const auto result = communication_protocol_->write(
             joint_ids_[i], address, std::experimental::make_array(static_cast<uint8_t>(std::stoi(param_it->second))));
         if (!result) {
-          spdlog::error("FeetechHardwareInterface::configure_joints_ -> {}", result.error());
+          spdlog::error("FeetechHardwareInterface::configure_joints_ id={} param={} -> {}",
+                        joint_ids_[i],
+                        parameter_name,
+                        result.error());
           return CallbackReturn::ERROR;
         }
       }
@@ -167,7 +170,10 @@ CallbackReturn FeetechHardwareInterface::configure_joints_(const JointIdConfigMa
         feetech_driver::to_sts(&buf[0], &buf[1], std::stoi(param_it->second));
         const auto result = communication_protocol_->write(joint_ids_[i], address, buf);
         if (!result) {
-          spdlog::error("FeetechHardwareInterface::configure_joints_ -> {}", result.error());
+          spdlog::error("FeetechHardwareInterface::configure_joints_ id={} param={} -> {}",
+                        joint_ids_[i],
+                        parameter_name,
+                        result.error());
           return CallbackReturn::ERROR;
         }
       }
@@ -182,7 +188,10 @@ CallbackReturn FeetechHardwareInterface::configure_joints_(const JointIdConfigMa
         feetech_driver::to_sts(&buf[0], &buf[1], value);
         const auto result = communication_protocol_->write(joint_ids_[i], address, buf);
         if (!result) {
-          spdlog::error("FeetechHardwareInterface::configure_joints_ -> {}", result.error());
+          spdlog::error("FeetechHardwareInterface::configure_joints_ id={} param={} -> {}",
+                        joint_ids_[i],
+                        parameter_name,
+                        result.error());
           return CallbackReturn::ERROR;
         }
       }
