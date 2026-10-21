@@ -1,6 +1,8 @@
+#include <feetech_driver/SMS_STS.h>
 #include <fmt/ranges.h>
 
 #include <algorithm>
+#include <cmath>
 #include <feetech_driver/common.hpp>
 #include <feetech_driver/communication_protocol.hpp>
 #include <feetech_ros2_driver/feetech_ros2_driver.hpp>
@@ -41,6 +43,25 @@ CallbackReturn FeetechHardwareInterface::on_init(const hardware_interface::Hardw
   if (validate_model_series_() != CallbackReturn::SUCCESS) {
     return CallbackReturn::ERROR;
   }
+
+  // FeetechState publisher (same message the waveshare bridge publishes). A plain
+  // SystemInterface has no node, so create one; publishing needs no executor.
+  const auto topic_it = info_.hardware_parameters.find("state_topic");
+  const std::string state_topic =
+      (topic_it != info_.hardware_parameters.end() && !topic_it->second.empty()) ? topic_it->second : "/feetech_state";
+  state_node_ = std::make_shared<rclcpp::Node>("feetech_hardware_interface");
+  state_pub_ = state_node_->create_publisher<FeetechStateMsg>(state_topic, rclcpp::SystemDefaultsQoS());
+  state_rt_pub_ = std::make_unique<StatePublisher>(state_pub_);
+
+  const size_t n = joint_ids_.size();
+  state_msg_.id.assign(joint_ids_.begin(), joint_ids_.end());
+  state_msg_.torque_state.assign(n, false);
+  state_msg_.hw_state.assign(n, -1);  // -1 = not read yet, matching the bridge
+  state_msg_.present_temperature.assign(n, 0);
+  state_msg_.present_input_voltage.assign(n, 0);
+  state_msg_.present_current.assign(n, 0);
+  state_msg_.present_load.assign(n, 0);
+  spdlog::info("Publishing FeetechState on '{}'", state_topic);
 
   return CallbackReturn::SUCCESS;
 }
@@ -108,6 +129,7 @@ CallbackReturn FeetechHardwareInterface::load_yaml_config_and_warn_(JointIdConfi
 
 CallbackReturn FeetechHardwareInterface::configure_joints_(const JointIdConfigMap& yaml_by_id) {
   joint_ids_.assign(info_.joints.size(), 0);
+  torque_enabled_.assign(info_.joints.size(), false);
 
   for (size_t i = 0; i < info_.joints.size(); ++i) {
     const auto& joint = info_.joints[i];
@@ -200,6 +222,7 @@ CallbackReturn FeetechHardwareInterface::configure_joints_(const JointIdConfigMa
         spdlog::error("FeetechHardwareInterface::configure_joints_ set_torque -> {}", result.error());
         return CallbackReturn::ERROR;
       }
+      torque_enabled_[i] = true;
     }
   }
 
@@ -232,11 +255,33 @@ CallbackReturn FeetechHardwareInterface::validate_model_series_() {
 
 std::vector<hardware_interface::StateInterface> FeetechHardwareInterface::export_state_interfaces() {
   std::vector<hardware_interface::StateInterface> state_interfaces;
-  state_hw_positions_.resize(info_.joints.size(), 0.0);
-  state_hw_velocities_.resize(info_.joints.size(), 0.0);
-  for (uint i = 0; i < info_.joints.size(); i++) {
+  const size_t n = info_.joints.size();
+  state_hw_positions_.resize(n, 0.0);
+  state_hw_velocities_.resize(n, 0.0);
+  state_hw_temperatures_.resize(n, 0.0);
+  state_hw_input_voltages_.resize(n, 0.0);
+  state_hw_currents_.resize(n, 0.0);
+  state_hw_loads_.resize(n, 0.0);
+  state_hw_hw_states_.resize(n, 0.0);
+  for (uint i = 0; i < n; i++) {
     state_interfaces.emplace_back(info_.joints[i].name, hardware_interface::HW_IF_POSITION, &state_hw_positions_[i]);
     state_interfaces.emplace_back(info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &state_hw_velocities_[i]);
+
+    // Telemetry is opt-in: exported only when the URDF declares it on the joint, e.g.
+    //   <state_interface name="temperature"/>
+    // FeetechState is published with all fields either way.
+    const std::map<std::string, double*> telemetry = {{"temperature", &state_hw_temperatures_[i]},
+                                                      {"input_voltage", &state_hw_input_voltages_[i]},
+                                                      {"current", &state_hw_currents_[i]},
+                                                      {"load", &state_hw_loads_[i]},
+                                                      {"hw_state", &state_hw_hw_states_[i]}};
+    for (const auto& si : info_.joints[i].state_interfaces) {
+      if (const auto it = telemetry.find(si.name); it != telemetry.end()) {
+        state_interfaces.emplace_back(info_.joints[i].name, it->first, it->second);
+      } else if (si.name != hardware_interface::HW_IF_POSITION && si.name != hardware_interface::HW_IF_VELOCITY) {
+        spdlog::warn("Joint '{}': unknown state_interface '{}' ignored", info_.joints[i].name, si.name);
+      }
+    }
   }
 
   return state_interfaces;
@@ -254,24 +299,77 @@ std::vector<hardware_interface::CommandInterface> FeetechHardwareInterface::expo
   return command_interfaces;
 }
 
-hardware_interface::return_type FeetechHardwareInterface::read(const rclcpp::Time& /* time */,
+hardware_interface::return_type FeetechHardwareInterface::read(const rclcpp::Time& time,
                                                                const rclcpp::Duration& /* period */) {
-  // 4 = 2 bytes for position + 2 bytes for speed
-  std::vector<std::array<uint8_t, 4>> data;
+  // Feedback block Present_Position (56) .. Present_Current_H (70), 15 bytes, same block as
+  // the Feetech SDK's SMS_STS::FeedBack(). Offsets below are relative to reg 56.
+  constexpr size_t kFeedbackLen = SMS_STS_PRESENT_CURRENT_H - SMS_STS_PRESENT_POSITION_L + 1;
+  constexpr size_t kPos = SMS_STS_PRESENT_POSITION_L - SMS_STS_PRESENT_POSITION_L;
+  constexpr size_t kSpeed = SMS_STS_PRESENT_SPEED_L - SMS_STS_PRESENT_POSITION_L;
+  constexpr size_t kLoad = SMS_STS_PRESENT_LOAD_L - SMS_STS_PRESENT_POSITION_L;
+  constexpr size_t kVoltage = SMS_STS_PRESENT_VOLTAGE - SMS_STS_PRESENT_POSITION_L;
+  constexpr size_t kTemperature = SMS_STS_PRESENT_TEMPERATURE - SMS_STS_PRESENT_POSITION_L;
+  constexpr size_t kCurrent = SMS_STS_PRESENT_CURRENT_L - SMS_STS_PRESENT_POSITION_L;
+  // Sign-magnitude direction bits, per the Feetech SDK (SMS_STS.h): bit 15 for
+  // position/speed/current, bit 10 for load.
+  constexpr int kDirBit = 15;
+  constexpr int kLoadDirBit = 10;
+  // Present_Current LSB in mA. Not in the Feetech SDK; same value the waveshare bridge
+  // uses -- verify against the Feetech memory table.
+  constexpr double kCurrentMaPerLsb = 6.5;
+
+  const auto word = [](const auto& r, size_t off) {
+    return feetech_driver::from_sts(feetech_driver::WordBytes{.low = r[off], .high = r[off + 1]});
+  };
+
+  std::vector<std::array<uint8_t, kFeedbackLen>> data;
+  std::vector<uint8_t> status;
   data.reserve(joint_ids_.size());
-  if (auto result = communication_protocol_->sync_read(joint_ids_, SMS_STS_PRESENT_POSITION_L, &data); !result) {
+  if (auto result = communication_protocol_->sync_read(joint_ids_, SMS_STS_PRESENT_POSITION_L, &data, &status);
+      !result) {
     spdlog::error("FeetechHardwareInterface::read -> {}", result.error());
+    publish_state_(time, feetech_ros2_driver::msg::FeetechState::COMM_STATE_ITEM_READ_FAIL);
     return hardware_interface::return_type::ERROR;
   }
   ranges::for_each(data | ranges::views::enumerate, [&](const auto& values) {
-    const auto& [index, readings] = values;
-    state_hw_positions_[index] = feetech_driver::to_radians(
-        feetech_driver::from_sts(feetech_driver::WordBytes{.low = readings[0], .high = readings[1]}) -
-        feetech_driver::kStsMidpoint);
-    state_hw_velocities_[index] = feetech_driver::to_radians(
-        feetech_driver::from_sts(feetech_driver::WordBytes{.low = readings[2], .high = readings[3]}));
+    const auto& [index, r] = values;
+    state_hw_positions_[index] = feetech_driver::to_radians(word(r, kPos) - feetech_driver::kStsMidpoint);
+    state_hw_velocities_[index] =
+        feetech_driver::to_radians(feetech_driver::decode_sign_magnitude(word(r, kSpeed), kDirBit));
+    state_hw_loads_[index] = feetech_driver::decode_sign_magnitude(word(r, kLoad), kLoadDirBit);  // 0.1 %
+    state_hw_input_voltages_[index] = r[kVoltage] / 10.0;                                         // V
+    state_hw_temperatures_[index] = r[kTemperature];                                              // degC
+    state_hw_currents_[index] =
+        feetech_driver::decode_sign_magnitude(word(r, kCurrent), kDirBit) * kCurrentMaPerLsb;  // mA
+    state_hw_hw_states_[index] = status[index];
   });
+
+  publish_state_(time, feetech_ros2_driver::msg::FeetechState::COMM_STATE_OK);
   return hardware_interface::return_type::OK;
+}
+
+void FeetechHardwareInterface::publish_state_(const rclcpp::Time& time, const int32_t comm_state) {
+  // on_activate calls read() with a default-constructed Time; skip that one.
+  if (!state_rt_pub_ || time.nanoseconds() == 0) {
+    return;
+  }
+  state_msg_.header.stamp = time;
+  state_msg_.comm_state = comm_state;
+  const bool ok = comm_state == feetech_ros2_driver::msg::FeetechState::COMM_STATE_OK;
+  for (size_t i = 0; i < joint_ids_.size(); ++i) {
+    state_msg_.torque_state[i] = torque_enabled_[i];
+    if (!ok) {
+      state_msg_.hw_state[i] = -1;  // not read this cycle, NOT "no error" (bridge convention)
+      continue;
+    }
+    state_msg_.hw_state[i] = static_cast<int32_t>(state_hw_hw_states_[i]);
+    state_msg_.present_temperature[i] = static_cast<int16_t>(state_hw_temperatures_[i]);
+    state_msg_.present_input_voltage[i] = static_cast<int16_t>(std::lround(state_hw_input_voltages_[i] * 10.0));
+    state_msg_.present_current[i] =
+        static_cast<int16_t>(std::clamp(std::lround(state_hw_currents_[i]), -32768L, 32767L));
+    state_msg_.present_load[i] = static_cast<int16_t>(state_hw_loads_[i]);
+  }
+  state_rt_pub_->try_publish(state_msg_);
 }
 
 hardware_interface::return_type FeetechHardwareInterface::write(const rclcpp::Time& /* time */,
@@ -323,6 +421,7 @@ CallbackReturn FeetechHardwareInterface::on_deactivate(const rclcpp_lifecycle::S
     spdlog::error("FeetechHardwareInterface::on_deactivate -> {}", result.error());
     return CallbackReturn::ERROR;
   }
+  torque_enabled_.assign(torque_enabled_.size(), false);
   return CallbackReturn::SUCCESS;
 }
 

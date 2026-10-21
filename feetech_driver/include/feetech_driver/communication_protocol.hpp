@@ -144,9 +144,12 @@ class CommunicationProtocol {
   /// TODO: Should we pass the length and this returns Expected<std::vector<std::vector<uint8_t>>>?
   /// Sync Read
   template <std::size_t N>
+  /// @param status Optional: receives each servo's status-packet error byte (0 = no error),
+  ///               in the same order as ids.
   Result sync_read(const std::vector<uint8_t>& ids,
                    const uint8_t memory_address,
-                   std::vector<std::array<uint8_t, N>>* data) {
+                   std::vector<std::array<uint8_t, N>>* data,
+                   std::vector<uint8_t>* status = nullptr) {
     std::array<uint8_t, 7> buffer{{0,
                                    0,
                                    kBroadcastId,
@@ -175,6 +178,9 @@ class CommunicationProtocol {
     }
 
     data->resize(ids.size());
+    if (status != nullptr) {
+      status->resize(ids.size());
+    }
     for (size_t i = 0; i < ids.size(); ++i) {
       std::array<uint8_t, 3> response_buffer{};  // ID, Effective Data length, Working status
       uint8_t checksum{};
@@ -189,6 +195,9 @@ class CommunicationProtocol {
       if (static_cast<std::byte>(calculated_checksum) != static_cast<std::byte>(checksum)) {
         return tl::make_unexpected(fmt::format(
             "CommunicationProtocol::sync_read [calculated_checksum={}, checksum={}]", calculated_checksum, checksum));
+      }
+      if (status != nullptr) {
+        (*status)[i] = response_buffer[2];  // Working status: the servo's error flags
       }
     }
     return {};

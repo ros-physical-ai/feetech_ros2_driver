@@ -34,9 +34,17 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(realtime_tools REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+find_package(std_msgs REQUIRED)
 
 # Set ${PROJECT_NAME}_VERSION
 ament_package_xml()
+
+# Telemetry message, generated as feetech_ros2_driver/msg/FeetechState
+rosidl_generate_interfaces(${PROJECT_NAME}_msgs "msg/FeetechState.msg" DEPENDENCIES std_msgs
+                           LIBRARY_NAME ${PROJECT_NAME})
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_msgs "rosidl_typesupport_cpp")
 
 add_library(${PROJECT_NAME} src/feetech_ros2_driver.cpp)
 target_include_directories(
@@ -50,7 +58,9 @@ target_link_libraries(
          hardware_interface::hardware_interface
          pluginlib::pluginlib
          rclcpp::rclcpp
-         rclcpp_lifecycle::rclcpp_lifecycle)
+         rclcpp_lifecycle::rclcpp_lifecycle
+         realtime_tools::realtime_tools
+         ${cpp_typesupport_target})
 
 pluginlib_export_plugin_description_file(
   hardware_interface feetech_ros2_control_plugin_description.xml)
@@ -64,7 +74,8 @@ install(
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 
 ament_export_targets(${PROJECT_NAME}Targets HAS_LIBRARY_TARGET)
-ament_export_dependencies(rclcpp rclcpp_lifecycle hardware_interface pluginlib)
+ament_export_dependencies(rclcpp rclcpp_lifecycle hardware_interface pluginlib realtime_tools
+                          rosidl_default_runtime)
 
 ament_generate_version_header(${PROJECT_NAME} HEADER_PATH
                               ${PROJECT_NAME}/version.hpp)
