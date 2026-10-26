@@ -314,16 +314,33 @@ CallbackReturn FeetechHardwareInterface::on_activate(const rclcpp_lifecycle::Sta
 }
 
 CallbackReturn FeetechHardwareInterface::on_deactivate(const rclcpp_lifecycle::State& /* previous_state */) {
-  // all joints torque off
-  const auto torque_disable_parameters =
-      std::vector(joint_ids_.size(), std::experimental::make_array(static_cast<uint8_t>(0)));
-  if (const auto result =
-          communication_protocol_->sync_write(joint_ids_, SMS_STS_TORQUE_ENABLE, torque_disable_parameters);
-      !result) {
-    spdlog::error("FeetechHardwareInterface::on_deactivate -> {}", result.error());
-    return CallbackReturn::ERROR;
+  // Torque off one servo at a time: a WRITE is answered with a status packet and the register is read back,
+  // where a broadcast SYNC WRITE gets no reply and a servo that misses it keeps torque enabled.
+  constexpr int kAttempts = 3;
+  bool all_off = true;
+  for (const auto id : joint_ids_) {
+    bool off = false;
+    for (int attempt = 1; attempt <= kAttempts && !off; ++attempt) {
+      if (const auto result = communication_protocol_->set_torque(id, false); !result) {
+        spdlog::warn(
+            "FeetechHardwareInterface::on_deactivate [id={}] torque off, attempt {}: {}", id, attempt, result.error());
+        continue;
+      }
+      std::array<uint8_t, 1> torque_enable{};
+      if (const auto result = communication_protocol_->read(id, SMS_STS_TORQUE_ENABLE, &torque_enable); !result) {
+        spdlog::warn(
+            "FeetechHardwareInterface::on_deactivate [id={}] read back, attempt {}: {}", id, attempt, result.error());
+        continue;
+      }
+      off = torque_enable[0] == 0;
+    }
+    if (!off) {
+      spdlog::error(
+          "FeetechHardwareInterface::on_deactivate [id={}] torque still enabled after {} attempts", id, kAttempts);
+      all_off = false;
+    }
   }
-  return CallbackReturn::SUCCESS;
+  return all_off ? CallbackReturn::SUCCESS : CallbackReturn::ERROR;
 }
 
 }  // namespace feetech_ros2_driver
