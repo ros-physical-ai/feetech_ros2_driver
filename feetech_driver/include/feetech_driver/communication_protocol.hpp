@@ -201,9 +201,11 @@ class CommunicationProtocol {
   /// @param data The buffer to store the data
   template <std::size_t N>
   Result read(const uint8_t id, const uint8_t memory_address, std::array<uint8_t, N>* data) {
-    auto write_result = write_buffer(id, memory_address, std::array<uint8_t, 1>{N}, kInstructionRead).and_then([&] {
-      return check_head();
-    });
+    // Drop bytes left over from an earlier exchange so they are not parsed as this reply.
+    auto write_result =
+        serial_port_->flashInputBuffer()
+            .and_then([&] { return write_buffer(id, memory_address, std::array<uint8_t, 1>{N}, kInstructionRead); })
+            .and_then([&] { return check_head(); });
 
     if (!write_result) {
       return tl::make_unexpected(fmt::format("CommunicationProtocol::read -> {}", write_result.error()));
@@ -218,6 +220,14 @@ class CommunicationProtocol {
 
     if (!read_result) {
       return read_result;
+    }
+    // b_buf holds the reply's id, length and error bytes.
+    if (b_buf[0] != id) {
+      return tl::make_unexpected(
+          fmt::format("CommunicationProtocol::read [reply id={} != requested id={}]", b_buf[0], id));
+    }
+    if (b_buf[1] != N + 2) {
+      return tl::make_unexpected(fmt::format("CommunicationProtocol::read [reply length={} != {}]", b_buf[1], N + 2));
     }
     const auto calculated_checksum = ~(sum_bytes(b_buf) + sum_bytes(*data));
 
