@@ -58,7 +58,7 @@ class FeetechHardwareInterface : public hardware_interface::SystemInterface {
 
   // Telemetry from the same sync read as position/velocity (Present_Position..Present_Current).
   // State interfaces carry physical units (degC, V, mA, 0.1 %, raw error byte); FeetechState
-  // carries the message's scaled integers. Mirrors dynamixel_hardware_interface PR #107.
+  // carries the message's scaled integers. 
   std::vector<double> state_hw_temperatures_;
   std::vector<double> state_hw_input_voltages_;
   std::vector<double> state_hw_currents_;
