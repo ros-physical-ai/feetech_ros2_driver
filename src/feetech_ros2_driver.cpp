@@ -1,6 +1,7 @@
 #include <fmt/ranges.h>
 
 #include <algorithm>
+#include <charconv>
 #include <feetech_driver/common.hpp>
 #include <feetech_driver/communication_protocol.hpp>
 #include <feetech_ros2_driver/feetech_ros2_driver.hpp>
@@ -54,9 +55,26 @@ CallbackReturn FeetechHardwareInterface::init_transport_() {
     return CallbackReturn::ERROR;
   }
 
+  // Optional <param name="baud_rate">115200</param>; default 1000000 (the STS factory setting)
+  auto baud_rate = LibSerial::BaudRate::BAUD_1000000;
+  if (const auto baud_it = info_.hardware_parameters.find("baud_rate"); baud_it != info_.hardware_parameters.end()) {
+    const std::string& text = baud_it->second;
+    std::size_t baud = 0;
+    const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), baud);
+    const auto parsed = (ec == std::errc{} && end == text.data() + text.size())
+                            ? feetech_driver::to_baudrate(baud)
+                            : tl::make_unexpected(fmt::format("not a number: [{}]", text));
+    if (!parsed) {
+      spdlog::error("FeetechHardwareInterface::init_transport_ Hardware parameter [baud_rate] -> {}", parsed.error());
+      return CallbackReturn::ERROR;
+    }
+    baud_rate = parsed.value();
+    spdlog::info("Baud rate: {}", baud);
+  }
+
   auto serial_port = std::make_unique<feetech_driver::SerialPort>(usb_port_it->second);
 
-  if (const auto result = serial_port->configure(); !result) {
+  if (const auto result = serial_port->configure(baud_rate); !result) {
     spdlog::error("FeetechHardwareInterface::init_transport_ -> {}", result.error());
     return CallbackReturn::ERROR;
   }
