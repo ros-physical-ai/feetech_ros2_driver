@@ -28,8 +28,9 @@ inline uint16_t position_raw(double radians) {
   return static_cast<uint16_t>(raw);
 }
 inline uint16_t speed_raw(double radians_per_second) {
-  const double raw = radians_per_second / step;
+  const double raw = std::abs(radians_per_second) / step;
   if (!(raw >= 1 && raw <= 32767)) throw std::out_of_range("Invalid SCS0009 goal speed");
-  return static_cast<uint16_t>(raw);
+  const auto magnitude = static_cast<uint16_t>(raw);
+  return radians_per_second < 0 ? static_cast<uint16_t>(magnitude | 0x8000u) : magnitude;
 }
 }  // namespace feetech_driver::scs0009

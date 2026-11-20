@@ -61,7 +61,7 @@ target_include_directories(
                      $<INSTALL_INTERFACE:include>)
 target_include_directories(serial_port SYSTEM PUBLIC ${SERIAL_INCLUDE_DIRS})
 target_link_libraries(serial_port PUBLIC fmt::fmt spdlog::spdlog tl::expected
-                                         ${SERIAL_LIBRARIES})
+                                         range-v3::range-v3 ${SERIAL_LIBRARIES})
 set_target_properties(
   serial_port PROPERTIES VERSION ${${PROJECT_NAME}_VERSION}
                          SOVERSION ${CPACK_PACKAGE_VERSION_MAJOR})

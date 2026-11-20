@@ -3,6 +3,7 @@
 include(CMakeFindDependencyMacro)
 find_dependency(fmt)
 find_dependency(spdlog)
+find_dependency(range-v3)
 if(NOT TARGET tl::expected)
   find_package(tl-expected QUIET)
   if(NOT tl-expected_FOUND)

@@ -12,7 +12,9 @@ TEST(Scs0009, EncoderAndSpeed) {
   EXPECT_EQ(scs::word(511), (scs::Word{1, 255}));
   EXPECT_EQ(scs::position_radians(scs::word(511)), 0);
   EXPECT_EQ(scs::position_raw(std::numbers::pi / 2), 818);
-  EXPECT_EQ(scs::speed_raw(3), 586);
+  EXPECT_EQ(scs::speed_raw(3), 0x024A);
+  EXPECT_EQ(scs::speed_raw(-3), 0x824A);
+  EXPECT_THROW(scs::speed_raw(-32768 * scs::step), std::out_of_range);
   EXPECT_THROW(scs::position_radians(scs::word(1024)), std::out_of_range);
   EXPECT_THROW(scs::speed_raw(0), std::out_of_range);
 }
