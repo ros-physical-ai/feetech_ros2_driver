@@ -6,6 +6,7 @@
   <description>ros2_control hardware interface for Feetech Servos</description>
   <maintainer email="jafar.uruc@gmail.com">Jafar Uruc</maintainer>
   <license>BSD</license>
+  <license>Apache-2.0</license>
   <url type="website">https://github.com/JafarAbdi/feetech_ros2_driver</url>
   <url type="bugtracker">
     https://github.com/JafarAbdi/feetech_ros2_driver/issues
@@ -15,8 +16,6 @@
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
   <depend>hardware_interface</depend>
-  <depend>transmission_interface</depend>
-  <license>Apache-2.0</license>
   <depend>pluginlib</depend>
   <depend>libexpected-dev</depend>
   <depend>spdlog</depend>

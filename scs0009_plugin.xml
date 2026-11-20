@@ -1,3 +1,0 @@
-<library path="scs0009_system">
-  <class name="feetech_ros2_driver/Scs0009System" type="feetech_ros2_driver::Scs0009System" base_class_type="hardware_interface::SystemInterface"/>
-</library>
