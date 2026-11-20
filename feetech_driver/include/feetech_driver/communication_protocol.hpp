@@ -43,6 +43,7 @@ class CommunicationProtocol {
           fmt::format("IDs[={}] and parameters[={}] must have the same size", ids.size(), parameters.size()));
     }
 
+    serial_port_->begin_packet();
     std::array<uint8_t, 7> buffer{
         {0xff,
          0xff,
@@ -147,6 +148,7 @@ class CommunicationProtocol {
   Result sync_read(const std::vector<uint8_t>& ids,
                    const uint8_t memory_address,
                    std::vector<std::array<uint8_t, N>>* data) {
+    serial_port_->begin_packet();
     std::array<uint8_t, 7> buffer{{0,
                                    0,
                                    kBroadcastId,
@@ -200,7 +202,11 @@ class CommunicationProtocol {
   /// @param memory_address The memory address to read from
   /// @param data The buffer to store the data
   template <std::size_t N>
-  Result read(const uint8_t id, const uint8_t memory_address, std::array<uint8_t, N>* data) {
+  Result read(const uint8_t id, const uint8_t memory_address, std::array<uint8_t, N>* data,
+              bool validate_status = false) {
+    if (validate_status) {
+      if (auto result = serial_port_->flashInputBuffer(); !result) return result;
+    }
     auto write_result = write_buffer(id, memory_address, std::array<uint8_t, 1>{N}, kInstructionRead).and_then([&] {
       return check_head();
     });
@@ -219,6 +225,8 @@ class CommunicationProtocol {
     if (!read_result) {
       return read_result;
     }
+    if (validate_status && (b_buf[0] != id || b_buf[1] != N + 2 || b_buf[2] != 0))
+      return tl::make_unexpected(fmt::format("READ id={} address={}: invalid status {}", id, memory_address, b_buf));
     const auto calculated_checksum = ~(sum_bytes(b_buf) + sum_bytes(*data));
 
     if (static_cast<std::byte>(calculated_checksum) != static_cast<std::byte>(checksum)) {
@@ -249,6 +257,7 @@ class CommunicationProtocol {
                       const uint8_t memory_address,
                       const std::array<uint8_t, N>& parameters,
                       const uint8_t instruction) {
+    serial_port_->begin_packet();
     std::array<uint8_t, 7 + N> write_buf{};
     write_buf[2] = id;
     write_buf[3] = 3 + N;  // Message length

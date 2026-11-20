@@ -6,6 +6,7 @@
   <description>ros2_control hardware interface for Feetech Servos</description>
   <maintainer email="jafar.uruc@gmail.com">Jafar Uruc</maintainer>
   <license>BSD</license>
+  <license>Apache-2.0</license>
   <url type="website">https://github.com/JafarAbdi/feetech_ros2_driver</url>
   <url type="bugtracker">
     https://github.com/JafarAbdi/feetech_ros2_driver/issues
@@ -23,6 +24,7 @@
   <depend>pkg-config</depend>
   <depend>yaml-cpp</depend>
   <depend>libserial-dev</depend>
+  <test_depend>ament_cmake_gtest</test_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

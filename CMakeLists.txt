@@ -69,4 +69,11 @@ ament_export_dependencies(rclcpp rclcpp_lifecycle hardware_interface pluginlib)
 ament_generate_version_header(${PROJECT_NAME} HEADER_PATH
                               ${PROJECT_NAME}/version.hpp)
 
+install(FILES LICENSE-SCS0009 NOTICE-SCS0009 DESTINATION share/${PROJECT_NAME})
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_scs0009 test/test_scs0009.cpp)
+  target_link_libraries(test_scs0009 communication_protocol util)
+endif()
+
 ament_package()

@@ -68,3 +68,8 @@ Pass the YAML file path as a hardware parameter:
 
 * URDF-only setup: [ros2_so_arm100](https://github.com/JafarAbdi/ros2_so_arm100/blob/main/so_arm100_description/control/so_arm100.ros2_control.xacro)
 * YAML config setup: [so101-ros-physical-ai](https://github.com/legalaspro/so101-ros-physical-ai) — see [follower](https://github.com/legalaspro/so101-ros-physical-ai/blob/main/so101_bringup/config/hardware/follower_joints.yaml) and [leader](https://github.com/legalaspro/so101-ros-physical-ai/blob/main/so101_bringup/config/hardware/leader_joints.yaml) arm configs.
+
+The C++ bus library also supports SCS0009 through sequential protocol-v1
+`read` and broadcast `sync_write`. Use the register addresses and big-endian
+encoder conversions in `feetech_driver/scs0009.hpp`. The STS ros2_control
+plugin uses the STS register layout.

@@ -1,6 +1,18 @@
 @PACKAGE_INIT@
 
-if (NOT TARGET feetech_driver::feetech_driver)
+include(CMakeFindDependencyMacro)
+find_dependency(fmt)
+find_dependency(spdlog)
+find_dependency(range-v3)
+if(NOT TARGET tl::expected)
+  find_package(tl-expected QUIET)
+  if(NOT tl-expected_FOUND)
+    find_dependency(tl_expected)
+    add_library(tl::expected ALIAS tl_expected::tl_expected)
+  endif()
+endif()
+
+if (NOT TARGET feetech_driver::communication_protocol)
   include(${CMAKE_CURRENT_LIST_DIR}/feetech_driver-targets.cmake)
 endif ()
 

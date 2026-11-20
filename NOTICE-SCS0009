@@ -1,0 +1,4 @@
+The SCS0009 position and speed conversions are adapted from
+pollen-robotics/rustypot, revision c564b12420815f6afcc592ff897d1c0175776ff3
+(src/servo/feetech/scs0009.rs), licensed under Apache-2.0.
+https://github.com/pollen-robotics/rustypot

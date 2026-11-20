@@ -16,12 +16,16 @@ class SerialPort {
   explicit SerialPort(const std::string& /*dev*/);
   ~SerialPort();
   Result configure(LibSerial::BaudRate baud_rate = LibSerial::BaudRate::BAUD_1000000);
+  // Opt in to exclusive access and a single deadline per packet (including fragmented I/O).
+  Result configure_transactions(LibSerial::BaudRate baud, std::chrono::steady_clock::duration timeout);
+  void begin_packet();
   Result open();
   Result close();
   Result flashInputBuffer() noexcept;
   Result flashOutputBuffer() noexcept;
 
   Result read_byte(uint8_t* byte) {
+    if (packet_fd_ >= 0) return transfer(byte, 1, false);
     try {
       port_.ReadByte(*byte, static_cast<std::size_t>(timeout_.count()));
     } catch (const LibSerial::ReadTimeout& e) {
@@ -32,6 +36,7 @@ class SerialPort {
   }
 
   Result read_exact(uint8_t* dst, size_t n) {
+    if (packet_fd_ >= 0) return transfer(dst, n, false);
     try {
       std::string s;
       s.resize(n);
@@ -53,6 +58,10 @@ class SerialPort {
 
   template <std::size_t N>
   Result write(const std::array<uint8_t, N>& buffer) {
+    if (packet_fd_ >= 0) {
+      auto bytes = buffer;
+      return transfer(bytes.data(), N, true);
+    }
     return check_port().and_then([&]() -> Result {
       try {
         port_.Write(std::string(buffer.begin(), buffer.end()));
@@ -68,5 +77,9 @@ class SerialPort {
   std::string dev_;
   std::chrono::milliseconds timeout_ = std::chrono::milliseconds(5);
   LibSerial::SerialPort port_;
+  int packet_fd_ = -1;
+  std::chrono::steady_clock::duration packet_timeout_{};
+  std::chrono::steady_clock::time_point deadline_;
+  Result transfer(uint8_t* data, size_t size, bool writing);
 };
 }  // namespace feetech_driver
