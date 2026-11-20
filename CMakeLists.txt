@@ -32,11 +32,30 @@ find_package(range-v3 REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(hardware_interface REQUIRED)
+find_package(transmission_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 # Set ${PROJECT_NAME}_VERSION
 ament_package_xml()
+
+# The SCS system uses framework-managed hardware interfaces (Jazzy and newer).
+if(hardware_interface_VERSION VERSION_GREATER_EQUAL 4.0)
+  add_library(scs0009_system SHARED src/scs0009.cpp src/scs0009_system.cpp)
+  target_include_directories(scs0009_system PRIVATE include)
+  target_link_libraries(scs0009_system PRIVATE
+    hardware_interface::hardware_interface transmission_interface::transmission_interface
+    pluginlib::pluginlib rclcpp::rclcpp)
+  install(TARGETS scs0009_system LIBRARY DESTINATION lib)
+  install(FILES NOTICE-SCS0009 LICENSE-SCS0009 DESTINATION share/${PROJECT_NAME})
+  pluginlib_export_plugin_description_file(hardware_interface scs0009_plugin.xml)
+  if(BUILD_TESTING)
+    find_package(ament_cmake_gtest REQUIRED)
+    ament_add_gtest(test_scs0009 test/test_scs0009.cpp)
+    target_include_directories(test_scs0009 PRIVATE include)
+    target_link_libraries(test_scs0009 scs0009_system util)
+  endif()
+endif()
 
 add_library(${PROJECT_NAME} src/feetech_ros2_driver.cpp)
 target_include_directories(

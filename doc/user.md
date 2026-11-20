@@ -68,3 +68,21 @@ Pass the YAML file path as a hardware parameter:
 
 * URDF-only setup: [ros2_so_arm100](https://github.com/JafarAbdi/ros2_so_arm100/blob/main/so_arm100_description/control/so_arm100.ros2_control.xacro)
 * YAML config setup: [so101-ros-physical-ai](https://github.com/legalaspro/so101-ros-physical-ai) — see [follower](https://github.com/legalaspro/so101-ros-physical-ai/blob/main/so101_bringup/config/hardware/follower_joints.yaml) and [leader](https://github.com/legalaspro/so101-ros-physical-ai/blob/main/so101_bringup/config/hardware/leader_joints.yaml) arm configs.
+
+## SCS0009 position system (Jazzy and newer)
+
+Select `feetech_ros2_driver/Scs0009System` for a bus of SCS0009 motors.
+These servos use big-endian words and a 10-bit encoder with a 300-degree span.
+The hardware parameters are `port`, `baudrate`, `serial_timeout` (seconds),
+`goal_speed` (rad/s), `motor_min_deg`, `motor_max_deg` (relative to the
+calibration), and `disable_torque_on_shutdown` (true or false). Supply all
+seven. Each joint takes an `id`, a `middle_deg` calibration offset, a bounded
+position command interface and position, velocity and effort state interfaces.
+Velocity is estimated from position samples. Effort is reported as zero.
+
+Uncoupled joints use calibrated motor radians. Optional ros2_control
+DifferentialTransmission entries use the declared joint and actuator order.
+Each joint's id identifies the actuator at the same index in its transmission.
+On activation the plugin reads all positions, writes the measured hold targets
+and the configured speed, then enables and checks torque. A serial fault
+returns a hardware error and attempts to disable torque on the entire bus.
