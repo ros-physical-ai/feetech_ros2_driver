@@ -40,7 +40,6 @@ Result CommunicationProtocol::read_response(const uint8_t id) {
 }
 
 Result CommunicationProtocol::check_head() {
-  serial_port_->begin_packet();
   std::array<uint8_t, 1> b_dat{};
   std::array<uint8_t, 2> b_buf{};
   const int max_number_of_tries = 10;

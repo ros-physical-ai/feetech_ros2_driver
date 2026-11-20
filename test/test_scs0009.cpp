@@ -74,3 +74,34 @@ TEST(Scs0009, RejectsInvalidStatusAndBoundsPacketTime) {
   ::close(master);
   ::close(slave);
 }
+
+TEST(Scs0009, SyncReadSharesDeadlineAcrossResponses) {
+  using namespace std::chrono_literals;
+  int master, slave;
+  char name[128];
+  ASSERT_EQ(openpty(&master, &slave, name, nullptr, nullptr), 0);
+  auto port = std::make_unique<feetech_driver::SerialPort>(name);
+  ASSERT_TRUE(port->configure_transactions(LibSerial::BaudRate::BAUD_1000000, 200ms));
+  feetech_driver::CommunicationProtocol bus(std::move(port));
+
+  // Each reply arrives within 200 ms of the previous one, but the second
+  // arrives after the deadline for the original request.
+  std::thread servos([&] {
+    uint8_t first_byte{};
+    if (::read(master, &first_byte, 1) != 1) return;
+    for (const uint8_t id : std::array<uint8_t, 2>{1, 2}) {
+      std::this_thread::sleep_for(140ms);
+      const std::array<uint8_t, 7> reply{255, 255, id, 3, 0, 42, static_cast<uint8_t>(~(id + 3 + 42))};
+      EXPECT_EQ(::write(master, reply.data(), reply.size()), static_cast<ssize_t>(reply.size()));
+    }
+  });
+
+  std::vector<std::array<uint8_t, 1>> values;
+  const auto result = bus.sync_read({1, 2}, scs::present_position, &values);
+  servos.join();
+  ::close(master);
+  ::close(slave);
+  ASSERT_FALSE(result);
+  EXPECT_NE(result.error().find("timeout"), std::string::npos);
+  EXPECT_EQ(values.at(0)[0], 42);
+}
